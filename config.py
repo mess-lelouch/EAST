@@ -1,5 +1,6 @@
 #data
 dataroot='./data'  #./data/train/img      ./data/train/gt
+train_root_path='CHANGE-ME'
 test_img_path='./data/test/img'
 result = './result'
 
