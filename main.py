@@ -1,3 +1,4 @@
+import sys
 import torch
 from torch.autograd import Variable
 import os
@@ -17,7 +18,7 @@ from utils.util import *
 from utils.save import *
 from utils.myzip import *
 import torch.backends.cudnn as cudnn
-from eval import predict
+from eval import predict, predict_single_image
 from hmean import compute_hmean
 import zipfile
 import glob
@@ -58,6 +59,34 @@ def train(train_loader, model, criterion, scheduler, optimizer, epoch):
             print('EAST <==> TRAIN <==> Epoch: [{0}][{1}/{2}] Loss {loss.val:.4f} Avg Loss {loss.avg:.4f})\n'.format(epoch, i, len(train_loader), loss=losses))
 
         save_loss_info(losses, epoch, i, train_loader)
+
+
+def execute():
+    file_path = sys.argv[1]
+    epoch = 9999999
+
+    model = East()
+    model = nn.DataParallel(model, device_ids=cfg.gpu_ids)
+    model = model.cuda()
+
+    weightpath = os.path.abspath(cfg.checkpoint)
+    checkpoint = torch.load(weightpath)
+    model.load_state_dict(checkpoint['state_dict'])
+
+    output_txt_dir_path = predict_single_image(model, file_path, epoch)
+
+    # Zip file
+    submit_path = MyZip(output_txt_dir_path, epoch)
+
+    # submit and compute Hmean
+    hmean_ = compute_hmean(submit_path)
+
+    state = {
+        'epoch'      : epoch,
+        'state_dict' : model.state_dict(),
+    }
+
+    print(state)
 
 
 def main():
@@ -139,4 +168,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    execute()

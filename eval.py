@@ -241,6 +241,84 @@ def transform_for_test():
     return transform
 
 
+def predict_single_image(model, im_fn, epoch):
+    timer = {'net': 0, 'restore': 0, 'nms': 0}
+
+    result_root = os.path.abspath(cfg.result)
+    if not os.path.exists(result_root):
+        os.mkdir(result_root)
+
+    output_dir_txt = os.path.join(result_root, 'epoch_'+str(epoch)+'_gt')
+    output_dir_pic = os.path.join(result_root, 'epoch_'+str(epoch)+'_img_with_box')
+
+    try:
+        shutil.rmtree(output_dir_txt)
+    except:
+        print('Dir {} is not exists, make it'.format(output_dir_txt))
+
+    try:
+        shutil.rmtree(output_dir_pic)
+    except:
+        print('Dir {} is not exists, make it'.format(output_dir_pic))
+
+    try:
+        os.mkdir(output_dir_txt)
+        os.mkdir(output_dir_pic)
+    except OSError as e:
+        if e.errno != 17:
+            raise
+
+    im = cv2.imread(im_fn)[:, :, ::-1]
+
+    im_resized, (ratio_h, ratio_w) = resize_image(im)
+    im_resized = im_resized.astype(np.float32)
+    im_resized = im_resized.transpose(2, 0, 1)
+    im_resized = torch.from_numpy(im_resized)
+    im_resized = im_resized.cuda()
+    im_resized = im_resized.unsqueeze(0)
+
+    score, geometry = model(im_resized)
+
+    score = score.permute(0, 2, 3, 1)
+    geometry = geometry.permute(0, 2, 3, 1)
+    score = score.data.cpu().numpy()
+    geometry = geometry.data.cpu().numpy()
+
+    boxes, timer = detect(score_map=score, geo_map=geometry, timer=timer)
+
+    if boxes is not None:
+        boxes = boxes[:, :8].reshape((-1, 4, 2))
+        boxes[:, :, 0] /= ratio_w
+        boxes[:, :, 1] /= ratio_h
+
+        if boxes is not None:
+            res_file = os.path.join(output_dir_txt, 'res_img_{}.txt'.format(os.path.basename(im_fn).split('_')[-1].strip('.jpg')))
+            with open(res_file, 'w') as f:
+                for box in boxes:
+                    box = sort_poly(box.astype(np.int32))
+
+                    if np.linalg.norm(box[0] - box[1]) < 5 or np.linalg.norm(box[3] - box[0]) < 5:
+                        #print('wrong direction')
+                        continue
+
+                    if box[0, 0] < 0 or box[0, 1] < 0 or box[1,0] < 0 or box[1,1] < 0 or box[2,0]<0 or box[2,1]<0 or box[3,0] < 0 or box[3,1]<0:
+                        continue
+
+                    poly = np.array([[box[0, 0], box[0, 1]], [box[1, 0], box[1, 1]], [box[2, 0], box[2, 1]], [box[3, 0], box[3, 1]]])
+
+                    p_area = polygon_area(poly)
+                    if p_area > 0:
+                        poly = poly[(0, 3, 2, 1), :]
+
+                    f.write('{},{},{},{},{},{},{},{}\r\n'.format(poly[0, 0], poly[0, 1], poly[1, 0], poly[1, 1], poly[2, 0], poly[2, 1], poly[3, 0], poly[3, 1],))
+                    cv2.polylines(im[:, :, ::-1], [box.astype(np.int32).reshape((-1, 1, 2))], True, color=(255, 255, 0), thickness=1)
+
+    save_img_path = os.path.join(output_dir_pic, os.path.basename(im_fn))
+    cv2.imwrite(save_img_path, im[:, :, ::-1])
+
+    return output_dir_txt
+
+
 def predict(model, criterion, epoch):
     # prepare ooutput directory
     print('EAST <==> TEST <==> Create Res_file and Img_with_box <==> Begin')
