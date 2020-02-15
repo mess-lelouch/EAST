@@ -79,14 +79,14 @@ def execute():
     submit_path = MyZip(output_txt_dir_path, epoch)
 
     # submit and compute Hmean
-    hmean_ = compute_hmean(submit_path)
+    # hmean_ = compute_hmean(submit_path)
 
     state = {
         'epoch'      : epoch,
         'state_dict' : model.state_dict(),
     }
 
-    print(state)
+    print("Done")
 
 
 def main():
